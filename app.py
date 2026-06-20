@@ -187,7 +187,7 @@ def init_db():
 
     # ── Seed Property Table from CSV ──────────
     prop_count = db.execute("SELECT COUNT(*) FROM Property").fetchone()[0]
-    if prop_count == 0:
+    if prop_count == 0 and os.path.exists(CSV_PATH):
         with open(CSV_PATH, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             rows = []
@@ -220,6 +220,8 @@ def init_db():
         """, rows)
         db.commit()
         print(f"Property table seeded with {len(rows)} rows")
+    elif prop_count == 0:
+        print(f"⚠ {CSV_PATH} not found — Property table left empty")
 
     # ── Seed sample Chat messages ─────────────
     chat_count = db.execute("SELECT COUNT(*) FROM Chat").fetchone()[0]
@@ -636,8 +638,19 @@ def api_table(table_name):
     return jsonify({"columns": list(rows[0].keys()), "rows": [dict(r) for r in rows]})
 
 # ─────────────────────────────────────────────
-# Entry Point
+# Database setup — runs on import so gunicorn (Render/production)
+# initializes the DB too, not just `python app.py`.
+# Guarded so it only seeds once: init_db() itself checks row counts
+# before inserting, but we also skip entirely if the DB file already
+# exists AND already has tables, to avoid re-running file I/O on every
+# worker reload.
+# ─────────────────────────────────────────────
+init_db()
+
+# ─────────────────────────────────────────────
+# Entry Point (local development only)
+# Render starts the app via gunicorn, not this block.
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
-    init_db()
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
